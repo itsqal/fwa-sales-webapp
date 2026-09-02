@@ -85,9 +85,17 @@ function redirectToLogin(req: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Everything except Next internals, the auth routes (which run without a
-     * session by definition), and static assets.
+     * Pages only — Next internals, static assets and every route handler are
+     * excluded.
+     *
+     * `api/` is excluded deliberately. Those handlers manage their own session:
+     * `/api/auth/*` runs without one by definition, `/api/upstream` refreshes
+     * and retries on a 401 itself, and `/api/health` must answer before anyone
+     * has logged in. Worse, redirecting them here would be actively wrong — a
+     * `fetch()` follows the redirect and receives the login page as a 200 full
+     * of HTML, so the client would read a dead session as a successful reply
+     * instead of the 401 it needs to act on.
      */
-    "/((?!_next/static|_next/image|api/auth|assets|favicon|.*\.(?:svg|png|ico|webmanifest)$).*)",
+    "/((?!_next/static|_next/image|api/|assets|favicon|.*\.(?:svg|png|ico|webmanifest)$).*)",
   ],
 };
