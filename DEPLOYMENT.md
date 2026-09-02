@@ -1,19 +1,23 @@
 # Deployment — Ubuntu VPS
 
 Command-by-command deployment of the supply chain **web dashboard** to the same Ubuntu
-server that already runs the API, in Docker behind nginx with TLS.
+server that already runs the API, as a systemd service behind nginx with TLS.
 
 Written for **Ubuntu 22.04 or 24.04**. Every command runs on the VPS unless it says
 otherwise. Anything in `ANGLE_BRACKETS` is yours to substitute.
 
 **This guide assumes the API is already deployed.** If it is not, do `backend/DEPLOYMENT.md`
-first — this dashboard is useless without it, and section 5 attaches to a Docker network
-the API creates.
+first — this dashboard is useless without it, and it talks to the API over loopback.
 
-> **TLS is not optional here.** The session cookie is marked `Secure`, so a browser
-> silently discards it over plain HTTP and every login bounces straight back to the login
-> screen with no error message. Section 7 is load-bearing. See
-> [section 12](#13-troubleshooting) if you meet it anyway.
+> **No Docker here, deliberately.** `next build` peaks at about **1.6 GB of RAM**, and
+> building inside Docker adds the daemon and a build container on top. On a small VPS that
+> is enough to trigger the kernel's OOM killer, which does not politely fail the build —
+> it picks a victim, and the victim may well be PostgreSQL. [Section 5](#5-build-it)
+> handles the memory problem head-on. Read it before you build.
+
+> **TLS is not optional.** The session cookie is marked `Secure`, so a browser silently
+> discards it over plain HTTP and every login bounces straight back to the login screen
+> with no error anywhere. [Section 7](#7-nginx-and-tls) is load-bearing.
 
 ---
 
@@ -21,10 +25,10 @@ the API creates.
 
 1. [What you need first](#1-what-you-need-first)
 2. [How this fits next to the API](#2-how-this-fits-next-to-the-api)
-3. [Get the code onto the server](#3-get-the-code-onto-the-server)
-4. [Find the API's Docker network](#4-find-the-apis-docker-network)
-5. [Write `.env`](#5-write-env)
-6. [Start the dashboard](#6-start-the-dashboard)
+3. [Install Node](#3-install-node)
+4. [Get the code onto the server](#4-get-the-code-onto-the-server)
+5. [Build it](#5-build-it)
+6. [Run it as a service](#6-run-it-as-a-service)
 7. [nginx and TLS](#7-nginx-and-tls)
 8. [Create the admin accounts](#8-create-the-admin-accounts)
 9. [Smoke test](#9-smoke-test)
@@ -37,8 +41,7 @@ the API creates.
 
 ## 1. What you need first
 
-- **The API already deployed and healthy** on this machine, per `backend/DEPLOYMENT.md`.
-  Confirm before you start:
+- **The API already deployed and healthy** on this machine. Confirm before you start:
 
   ```bash
   curl http://127.0.0.1:8000/health
@@ -49,15 +52,13 @@ the API creates.
   first one. A subdomain is the least disruptive choice — `dashboard.<YOUR_DOMAIN>` —
   because the API's nginx block already claims `<YOUR_DOMAIN>` and serves everything under
   it. TLS issuance in section 7 fails until DNS resolves, and propagation takes time, so
-  set this up before anything else.
-- Docker, the `deploy` user, ufw and nginx — all installed while deploying the API.
-  Nothing new to install.
-- Roughly 1 GB of free RAM during the build. The image build is the heaviest thing this
-  dashboard ever does; at runtime it sits near 150 MB.
+  set this up first.
+- **The `deploy` user, ufw and nginx**, all set up while deploying the API.
+- **Swap, or 2 GB of genuinely free RAM.** See [section 5](#5-build-it). This is the step
+  that bites.
 
-There are **no new secrets**. The dashboard holds none of its own — it has no database, no
-signing key and no service credential. Every secret in the system stays in the API's
-`.env`.
+There are **no new secrets**. The dashboard has no database, no signing key and no service
+credential of its own. Every secret in the system stays in the API's `.env`.
 
 ---
 
@@ -71,36 +72,49 @@ signing key and no service credential. Every secret in the system stays in the A
                       └───────────┬──────────────────┬───────────────┘
                                   │                  │
                       ┌───────────▼───────┐   ┌──────▼──────────┐
-                      │  fwa_dashboard    │   │  fwa_sales_api  │
-                      │  (Next.js)        │──▶│  (FastAPI)      │──▶ postgres
+                      │  fwa-dashboard    │   │  fwa_sales_api  │
+                      │  systemd, Node    │──▶│  Docker         │──▶ postgres
                       └───────────────────┘   └─────────────────┘
-                         server-to-server on the API's Docker network,
-                         never over the public internet
+                              over loopback, never the public internet
 ```
 
-**The dashboard calls the API by container name, not by domain.** `API_BASE_URL` is read
-only by server-side route handlers — it never reaches the browser — so it can point at an
-address that only this machine can resolve. That is the whole idea behind putting them on
-one box: a dashboard request for a PO list should not leave the machine, re-enter through
-the public IP, terminate TLS a second time and pass through nginx to reach a neighbour
-sitting in the next container.
+**The dashboard calls the API at `http://127.0.0.1:8000/v1`.** `API_BASE_URL` is read only
+by server-side route handlers — it never reaches the browser — so it can be an address
+only this machine can resolve. That is the whole point of putting them on one box: a
+request for a PO list should not leave the machine, re-enter through the public IP,
+terminate TLS a second time and pass through nginx to reach a neighbour.
 
-You might expect `http://127.0.0.1:8000/v1` for that, and if you ran the dashboard
-directly on the host that is exactly what you would use. It does **not** work from inside a
-container: `127.0.0.1` there is the container itself. Nor does `host.docker.internal` —
-the API publishes on `127.0.0.1:8000` only, so it is not listening on the address a
-container would reach the host by. Joining the API's own Docker network and addressing
-`http://fwa_sales_api:8000/v1` is the arrangement that actually works, and it keeps the
-API's port unpublished, which is what you want.
+Running on the host rather than in a container is what makes that literal `127.0.0.1`
+work. The API publishes on `127.0.0.1:8000`, which a container cannot reach without
+joining its network; a plain systemd process on the host reaches it directly.
 
-**Why the browser still cannot call the API directly.** It has no CORS headers — an
+**Why the browser still cannot call the API itself.** It has no CORS headers — an
 `OPTIONS` preflight returns 405. That is not an oversight to work around: the dashboard
 routes every call through its own `/api/upstream` handler, which attaches the bearer token
-server-side so the token lives in an `httpOnly` cookie and never in JavaScript.
+server-side, so the token lives in an `httpOnly` cookie and never in JavaScript.
 
 ---
 
-## 3. Get the code onto the server
+## 3. Install Node
+
+Next 16 needs **Node 20.9 or newer**. Ubuntu's own packages are older than that, so use
+NodeSource:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+Confirm:
+
+```bash
+node --version    # v22.x
+npm --version
+```
+
+---
+
+## 4. Get the code onto the server
 
 The API lives in `/srv/fwa/backend`. Put this beside it:
 
@@ -123,115 +137,145 @@ rsync -avz \
   D:/FWA_sales/webapp/ deploy@<SERVER_IP>:/srv/fwa/webapp/
 ```
 
-Never copy `.env.local` up from your development machine — it points at a `localhost` API
-that does not exist from inside a container.
+Never copy `node_modules` up. It contains binaries compiled for your laptop's platform,
+and `npm ci` on the server takes a minute anyway.
 
----
-
-## 4. Find the API's Docker network
-
-The dashboard joins the network Compose created for the API stack. Its name comes from the
-API's project directory, so check rather than assume:
-
-```bash
-docker network ls | grep -i default
-```
-
-You are looking for something like `backend_default`. Confirm the API container is
-actually on it:
-
-```bash
-docker network inspect backend_default \
-  --format '{{range .Containers}}{{.Name}} {{end}}'
-# fwa_sales_db fwa_sales_api
-```
-
-If `fwa_sales_api` is not listed, you have the wrong network — try the other candidates
-from `docker network ls`.
-
-> **Why join an existing network rather than create a shared one.** You could
-> `docker network create` a network and `docker network connect` both containers to it,
-> and it would work — until the next API deploy. `up -d --build` recreates the API
-> container, the manual connection is not part of its Compose definition, and it is
-> silently dropped. The dashboard then cannot reach the API and nobody changed anything in
-> this repository. Attaching to the API's own network avoids that: its containers always
-> rejoin it.
-
----
-
-## 5. Write `.env`
+Write the config:
 
 ```bash
 cd /srv/fwa/webapp
 cp .env.example .env
-nano .env
 ```
 
-Two values, and nothing else:
+The default is already correct for this deployment — the API is on loopback:
 
 ```bash
-# The API, reachable by container name on the shared network. `fwa_sales_api` is
-# the API's container_name, pinned in its docker-compose.prod.yml.
-API_BASE_URL=http://fwa_sales_api:8000/v1
-
-# The network you confirmed in section 4.
-BACKEND_NETWORK=backend_default
+API_BASE_URL=http://127.0.0.1:8000/v1
 ```
 
-`chmod 600` is unnecessary — there is nothing secret in this file. That is worth noticing
-rather than glossing over: if this dashboard is ever compromised, an attacker gets the
-ability to *reach* the API, not the ability to forge a token for it.
+Nothing in this file is secret, so it needs no `chmod`. Worth noticing rather than
+glossing over: if the dashboard is ever compromised, an attacker gains the ability to
+*reach* the API, not to forge a token for it.
 
 ---
 
-## 6. Start the dashboard
+## 5. Build it
+
+**This is the step that took the server down, so do the memory work first.**
+
+`next build` peaked at **1.6 GB** in measurement. Add the API and PostgreSQL already
+resident and a 2 GB box has nothing left. When Linux runs out of memory it does not fail
+the build politely — the OOM killer chooses a process by score and kills it, and a
+PostgreSQL backend is a fat, attractive target. That is why the whole machine appeared to
+crash rather than just the build.
+
+### Give it swap
+
+Swap is the fix. It is slow, and slow is exactly what you want here: a build that takes
+four minutes instead of two beats an outage.
+
+```bash
+free -h                    # look at the "Swap" row first — you may already have some
+```
+
+If swap is `0B`:
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h                    # Swap should now show 4.0Gi
+```
+
+The `fstab` line makes it survive a reboot. 4 GB costs nothing but disk and leaves room to
+spare; 2 GB is the minimum worth bothering with.
+
+### Cap the heap as well
+
+Swap keeps the machine alive; capping the heap keeps Node from reaching for the swap in
+the first place, because V8 collects garbage more aggressively as it approaches its
+ceiling.
 
 ```bash
 cd /srv/fwa/webapp
-docker compose -f docker-compose.prod.yml up -d --build
+npm ci
+NODE_OPTIONS=--max-old-space-size=1536 npm run build
 ```
 
-The first build takes several minutes — it installs dependencies, compiles the app, and
-runs the type checker and linter along the way. A type error fails the build here rather
-than shipping a broken dashboard, which is why the build runs on the server rather than
-being uploaded pre-built.
+The build runs the type checker and the linter on the way through, so a type error stops
+it here rather than shipping a broken dashboard.
 
-Watch it come up:
+Watch it from a second SSH session if you want to see the headroom:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f web
+watch -n1 free -h
 ```
 
-You are looking for `✓ Ready in …`. `Ctrl+C` stops tailing without stopping the container.
+### If it still will not build
 
-Check it is healthy and reaching the API:
+The machine is too small to build on. Build somewhere else and copy the result:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-# STATUS should read "Up … (healthy)" within about 30 seconds
+# On a machine with more RAM, running the same Ubuntu release:
+cd /path/to/webapp
+npm ci && npm run build
+rsync -avz .next/ deploy@<SERVER_IP>:/srv/fwa/webapp/.next/
+```
 
+The server still needs `npm ci` for the runtime dependencies, but never runs a build.
+Match the Ubuntu release and the Node major version: `.next` is portable between
+machines, `node_modules` is not, which is why only `.next` is copied.
+
+---
+
+## 6. Run it as a service
+
+A unit file ships with the repository:
+
+```bash
+sudo cp /srv/fwa/webapp/deploy/fwa-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fwa-dashboard
+```
+
+It runs as `deploy` from `/srv/fwa/webapp`, reads `.env`, restarts on failure, and comes
+back after a reboot. Check it:
+
+```bash
+systemctl status fwa-dashboard
+journalctl -u fwa-dashboard -f
+```
+
+You are looking for `✓ Ready in …`. `Ctrl+C` stops tailing without stopping the service.
+
+Then prove it is actually serving and can reach the API:
+
+```bash
 curl http://127.0.0.1:3000/api/health
 # {"status":"ok","service":"fwa-dashboard"}
 
-# The real test — this proves the container can resolve and reach the API:
-docker compose -f docker-compose.prod.yml exec web \
-  node -e "fetch('http://fwa_sales_api:8000/health').then(r=>r.text()).then(console.log)"
-# {"status":"ok"}
+# The real test — a login round-trips through the dashboard to the API and back:
+curl -s -X POST http://127.0.0.1:3000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"<AN_ADMIN>","password":"<THE_PASSWORD>"}' | head -c 200
 ```
 
-If that last command fails, the network binding is wrong. See
-[section 12](#12-troubleshooting).
+A `profile` object means the whole path works. If you have not created an admin yet, do
+[section 8](#8-create-the-admin-accounts) first — a `401` here with no admin accounts is
+expected, not a fault.
 
 > `/api/health` reports the dashboard process only and deliberately does not call the API.
-> A health check that fails when its upstream is down turns one outage into two, and Docker
-> would restart a healthy container in a loop while the real problem sat elsewhere.
+> A health check that fails when its upstream is down turns one outage into two, and
+> systemd would restart a perfectly healthy service in a loop while the real problem sat
+> elsewhere.
 
 ---
 
 ## 7. nginx and TLS
 
-The API already has a server block. Add a second one for the dashboard — do **not** edit
-the API's file.
+The API already has a server block. Add a second one — do **not** edit the API's file.
 
 ```bash
 sudo nano /etc/nginx/sites-available/fwa-dashboard
@@ -242,9 +286,9 @@ server {
     listen 80;
     server_name dashboard.<YOUR_DOMAIN>;
 
-    # Bulk imports post parsed spreadsheet rows as JSON. A 100 000-row supply
-    # batch is a few megabytes of digits; the default 1 MB would reject it with
-    # a 413 the operator cannot interpret.
+    # Bulk imports post parsed spreadsheet rows as JSON. A large supply batch is
+    # a few megabytes of digits; the default 1 MB would reject it with a 413 the
+    # operator cannot interpret.
     client_max_body_size 12m;
 
     location / {
@@ -254,13 +298,11 @@ server {
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        # Without this the app believes it is on plain HTTP and will not set the
-        # Secure session cookie correctly behind TLS.
+        # Without this the app believes it is on plain HTTP behind the proxy.
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # A 400-row validate-then-submit import is two round trips through the
-        # API and the database. 60s is generous; the default 60s is also fine,
-        # but state it rather than inherit it.
+        # A validate-then-submit import is two round trips through the API and
+        # the database. State the timeout rather than inheriting it.
         proxy_read_timeout 120s;
     }
 }
@@ -279,21 +321,18 @@ here:
 
 ```bash
 sudo certbot --nginx -d dashboard.<YOUR_DOMAIN>
-```
-
-Choose the redirect-HTTP-to-HTTPS option. Certbot rewrites the config, adds the TLS block
-and installs a renewal timer alongside the API's.
-
-```bash
 sudo certbot renew --dry-run
 ```
 
+Choose the redirect-HTTP-to-HTTPS option. Certbot rewrites the config, adds the TLS block,
+and installs a renewal timer alongside the API's.
+
 > **Do not skip this and "add TLS later".** The dashboard sets `Secure` on its session
-> cookies whenever `NODE_ENV=production`, which the image sets permanently. Over plain
+> cookies whenever `NODE_ENV=production`, which the service sets permanently. Over plain
 > HTTP a browser accepts the login response, discards both cookies, and redirects to the
-> dashboard — which finds no session and sends the user back to the login screen. No error
-> appears anywhere: not in the browser console, not in the container logs. It simply
-> refuses to log anyone in, forever.
+> dashboard — which finds no session and sends the user back to the login screen. Nothing
+> appears in the browser console or in the journal. It simply refuses to log anyone in,
+> forever.
 
 ---
 
@@ -349,7 +388,7 @@ you created. What you are checking, in order:
 
 1. **Login succeeds and stays succeeded.** Landing back on `/login` means the cookie was
    rejected — you are on HTTP, not HTTPS.
-2. **The sidebar matches the role.** A `DP_ADMIN` sees *Purchase Order MSISDN*, a
+2. **The sidebar matches the role.** A `DP_ADMIN` sees *Purchase Order MSISDN*; an
    `MPX_ADMIN` sees *Stok* and *Account Executive*. It is built from `GET /admin/me`, so a
    correct sidebar proves the dashboard is really talking to the API.
 3. **The role guard holds.** As a `DP_ADMIN`, type `dashboard.<YOUR_DOMAIN>/mpx/stock`.
@@ -365,29 +404,22 @@ salesman's phone and asserts at every hop. See `backend/DEPLOYMENT.md` §9.
 
 ## 10. Day-two operations
 
-All commands run from `/srv/fwa/webapp`. `-f docker-compose.prod.yml` is required every
-time.
-
 | Task | Command |
 |---|---|
-| Follow the logs | `docker compose -f docker-compose.prod.yml logs -f web` |
-| Last 100 log lines | `docker compose -f docker-compose.prod.yml logs --tail 100 web` |
-| Service status | `docker compose -f docker-compose.prod.yml ps` |
-| Restart | `docker compose -f docker-compose.prod.yml restart web` |
-| Stop | `docker compose -f docker-compose.prod.yml down` |
-| Start again | `docker compose -f docker-compose.prod.yml up -d` |
-| Shell inside the container | `docker compose -f docker-compose.prod.yml exec web sh` |
-| Disk reclaimed after a few deploys | `docker image prune -f` |
+| Follow the logs | `journalctl -u fwa-dashboard -f` |
+| Last 100 log lines | `journalctl -u fwa-dashboard -n 100 --no-pager` |
+| Logs since an hour ago | `journalctl -u fwa-dashboard --since '1 hour ago'` |
+| Service status | `systemctl status fwa-dashboard` |
+| Restart | `sudo systemctl restart fwa-dashboard` |
+| Stop | `sudo systemctl stop fwa-dashboard` |
+| Start | `sudo systemctl start fwa-dashboard` |
+| Stop it starting at boot | `sudo systemctl disable fwa-dashboard` |
+| Memory and swap in use | `free -h` |
 
-**There is nothing here to back up.** The dashboard is stateless: no database, no volume,
-no uploaded files. Every byte it displays lives in the API's PostgreSQL, which the API's
-backup script already covers. If this server burned down, restoring the dashboard is
-`git clone` and `up -d --build`.
-
-`docker compose down -v` is harmless here for the same reason — unlike on the API, where
-it destroys the database. Do not build the habit.
-
-The container restarts automatically after a reboot (`restart: unless-stopped`).
+**There is nothing here to back up.** The dashboard is stateless: no database, no uploads,
+no volume. Every byte it displays lives in the API's PostgreSQL, which the API's backup
+script already covers. If this server were lost, restoring the dashboard is `git clone`,
+`npm ci`, `npm run build`.
 
 ---
 
@@ -396,41 +428,61 @@ The container restarts automatically after a reboot (`restart: unless-stopped`).
 ```bash
 cd /srv/fwa/webapp
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml logs -f web
+npm ci
+NODE_OPTIONS=--max-old-space-size=1536 npm run build
+sudo systemctl restart fwa-dashboard
+journalctl -u fwa-dashboard -n 30 --no-pager
 ```
+
+`npm ci` is not optional after a `git pull` that changed `package-lock.json`; skipping it
+builds against the previous dependency tree.
 
 There are no migrations and no state, so there is no rollback dance and no ordering
 problem with the API. Rolling back is:
 
 ```bash
 git checkout <PREVIOUS_TAG>
-docker compose -f docker-compose.prod.yml up -d --build
+npm ci && NODE_OPTIONS=--max-old-space-size=1536 npm run build
+sudo systemctl restart fwa-dashboard
 ```
 
-Expect a few seconds of downtime while the container restarts. Anyone mid-form loses what
-they typed, so prefer a quiet hour — but nothing is corrupted by it: every write is a
-single atomic API call carrying an `Idempotency-Key`, so a submission either landed before
-the restart or did not happen at all.
+> **The build happens in place, while the old version is still serving.** For the couple of
+> minutes `npm run build` is running, `.next` is being rewritten underneath a live server,
+> which can produce odd errors for anyone using the dashboard at that moment. It recovers
+> on restart. Deploy during a quiet window; there are three companies on this thing, not
+> three thousand, so this is a real constraint rather than a theoretical one.
 
-**When the API ships a contract change**, regenerate the types before deploying the
-dashboard, on your machine:
+Anyone mid-form loses what they typed on restart, but nothing is corrupted: every write is
+a single atomic API call carrying an `Idempotency-Key`, so a submission either landed
+before the restart or did not happen at all.
+
+**When the API ships a contract change**, regenerate the types before deploying, on your
+machine:
 
 ```bash
 npm run api:types      # rewrites src/lib/api/schema.d.ts from references/openapi.yaml
 npm run typecheck
 ```
 
-If a field the dashboard reads was removed or renamed, `typecheck` fails here rather than
-the screen rendering `undefined` in production. Commit the regenerated file with the
-change.
+If a field the dashboard reads was removed or renamed, `typecheck` fails there rather than
+the screen rendering blanks in production. Commit the regenerated file with the change.
 
 ---
 
 ## 12. Troubleshooting
 
+**The server froze or rebooted during `npm run build`.** Out of memory. Do the swap work in
+[section 5](#5-build-it), then check what the kernel killed:
+
+```bash
+sudo dmesg -T | grep -i 'killed process'
+```
+
+If it names a `postgres` process, restart the API stack and check the database is healthy
+before doing anything else.
+
 **Login returns to the login screen with no error.** The cookie is `Secure` and you are on
-plain HTTP. Confirm with:
+plain HTTP. Confirm:
 
 ```bash
 curl -i https://dashboard.<YOUR_DOMAIN>/api/auth/login \
@@ -441,46 +493,40 @@ curl -i https://dashboard.<YOUR_DOMAIN>/api/auth/login \
 A `Set-Cookie` carrying `Secure` on an `http://` origin is discarded by every browser and
 reported by none. Finish [section 7](#7-nginx-and-tls).
 
+**`ECONNREFUSED 127.0.0.1:8000` in the journal.** The API is not running, or is not
+publishing on loopback:
+
+```bash
+curl http://127.0.0.1:8000/health
+cd /srv/fwa/backend && docker compose -f docker-compose.prod.yml ps
+```
+
 **Every page shows empty tables; the sidebar and your name are correct.** The dashboard
-reached the API for `GET /admin/me` during server rendering but the browser's calls are
-failing. Check the container logs and the browser's network tab for `/api/upstream/…`
-responses.
+reached the API for `GET /admin/me` during server rendering, but the browser's calls are
+failing. Check the journal and the browser's network tab for `/api/upstream/…` responses.
 
-**`getaddrinfo ENOTFOUND fwa_sales_api` in the logs.** The container is not on the API's
-network, or the API container is not running.
+**502 Bad Gateway from nginx.** The dashboard is not answering on `127.0.0.1:3000`:
 
 ```bash
-docker network inspect "$(grep BACKEND_NETWORK /srv/fwa/webapp/.env | cut -d= -f2)" \
-  --format '{{range .Containers}}{{.Name}} {{end}}'
+systemctl status fwa-dashboard
+curl http://127.0.0.1:3000/api/health
 ```
 
-Both `fwa_dashboard` and `fwa_sales_api` must appear. If the dashboard is missing,
-`up -d` it again after fixing `BACKEND_NETWORK`; if the API is missing, start the API
-stack.
+**`Could not find a production build`.** `next start` ran without `.next` present, usually
+because the build failed and you restarted the service anyway. Build, then restart.
 
-**`network … declared as external, but could not be found`.** `BACKEND_NETWORK` in `.env`
-does not match a real network. Redo [section 4](#4-find-the-apis-docker-network).
+**The service will not start: `status=203/EXEC`.** systemd cannot find Node at
+`/usr/bin/node`. Check with `which node` and correct `ExecStart` in the unit file, then
+`sudo systemctl daemon-reload`.
 
-**502 Bad Gateway from nginx.** The dashboard is not answering on `127.0.0.1:3000`. Check
-`curl http://127.0.0.1:3000/api/health` on the server, then the container logs.
+**The build fails on a type error.** The generated API types no longer match the code —
+usually because the API's contract changed. Regenerate them on your machine
+(`npm run api:types`), fix what breaks, and commit. Do not reach for a flag to skip the
+type check; it is the only thing standing between a renamed field and a screen full of
+blanks.
 
-**The build fails on `npm run build` with a type error.** The generated API types no longer
-match the code — usually because the API's contract changed. Regenerate them on your
-machine (`npm run api:types`), fix what breaks, and commit. Do not skip the type check to
-get a deploy out; it is the only thing standing between a renamed field and a screen full
-of blanks.
-
-**The build runs out of memory on a 1 GB VPS.** Add swap, or build the image elsewhere and
-push it to a registry:
-
-```bash
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-**Logos or icons are missing, everything else renders.** The image is missing `public/`.
-That means a partial build; rebuild with `--no-cache`.
+**Logos or icons are missing, everything else renders.** `public/` did not come across.
+Re-run the `rsync` from section 4 without excluding it.
 
 ---
 
@@ -500,20 +546,20 @@ endpoint behind it.
 **Brand and product artwork are placeholders.** The IM3 and 3ID marks are dashed
 placeholder boxes and every device image is a generic line drawing, because the real
 trademarked assets were never supplied. They are visible to three external companies on
-the *Buat PO* screen. Find them before a launch anyone will see:
+the *Buat PO* screen. Find them all before a launch anyone will see:
 
 ```bash
 grep -rl PLACEHOLDER /srv/fwa/webapp/public/assets/
 ```
 
-**The "indosat" wordmark in the logo is set in Poppins, not the corporate logotype.**
-Fine internally, wrong for anything printed or public.
+**The "indosat" wordmark in the logo is set in Poppins, not the corporate logotype.** Fine
+internally, wrong for anything printed or public-facing.
 
 **No monitoring.** Nothing tells you the dashboard is down except somebody saying so. An
 uptime check against `https://dashboard.<YOUR_DOMAIN>/api/health` is the cheapest first
 step, and it costs nothing to add alongside the one you should already have on the API.
 
-**Sessions last 30 days.** The refresh-token cookie has a 30-day lifetime and there is no
-idle timeout and no server-side session list, so a stolen laptop keeps a working dashboard
+**Sessions last 30 days.** The refresh-token cookie has a 30-day lifetime, with no idle
+timeout and no server-side session list, so a stolen laptop keeps a working dashboard
 session for a month. Whether that is acceptable is a business decision — these accounts
 can move stock between three companies.
