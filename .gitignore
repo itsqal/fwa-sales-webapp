@@ -49,7 +49,8 @@ next-env.d.ts
 
 # docs
 # Internal planning and review documents stay out of the repository —
-# CLAUDE.md, the backend spec, the development plan, the UI review. Only the
-# README, which explains how to run this thing, is committed.
+# CLAUDE.md, the backend spec, the development plan, the UI review. What is
+# committed is what someone needs to run and deploy this thing.
 *.md
 !README.md
+!DEPLOYMENT.md
