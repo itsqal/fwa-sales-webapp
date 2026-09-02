@@ -1,0 +1,58 @@
+# systemd unit for the FWA supply chain dashboard.
+#
+#   sudo cp deploy/fwa-dashboard.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fwa-dashboard
+#
+# Substitute the user and paths if you did not follow DEPLOYMENT.md exactly.
+
+[Unit]
+Description=FWA Supply Chain Dashboard (Next.js)
+Documentation=file:/srv/fwa/webapp/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+# The API is a Docker stack, not a systemd unit, so it cannot be an After=
+# dependency. It does not need to be: the dashboard serves its login page
+# whether or not the API is up, and reconnects on the next request.
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/srv/fwa/webapp
+
+# Config lives in .env beside the code. Required rather than optional: a
+# missing file should fail loudly instead of falling back to a default that
+# happens to work on this one machine.
+EnvironmentFile=/srv/fwa/webapp/.env
+Environment=NODE_ENV=production
+
+# Run the Next server directly rather than through `npm start`. npm adds a
+# process between systemd and the server, which muddies signal handling on
+# stop and restart — systemd should be talking to the thing it is supervising.
+ExecStart=/usr/bin/node node_modules/next/dist/bin/next start
+
+Restart=always
+RestartSec=5
+# Give a long import time to finish before SIGKILL.
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fwa-dashboard
+
+# --- hardening -------------------------------------------------------------
+# The dashboard holds no secrets of its own and writes nothing but a cache, so
+# it can be locked down hard.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Next writes its runtime cache here; everything else stays read-only.
+ReadWritePaths=/srv/fwa/webapp/.next
+
+[Install]
+WantedBy=multi-user.target

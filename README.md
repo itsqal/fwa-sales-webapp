@@ -18,10 +18,13 @@ See `CLAUDE.md` for the rules this codebase is built to, and
 The dashboard talks to the supply-chain API. Point it at one:
 
 ```bash
-cp .env.example .env.local     # API_BASE_URL=http://localhost:8000/v1
+cp .env.example .env           # API_BASE_URL=http://127.0.0.1:8000/v1
 npm install
 npm run dev                    # http://localhost:3000
 ```
+
+To put it on a server, see `DEPLOYMENT.md` — systemd behind nginx, on the same
+box as the API.
 
 Seeded logins on a development backend — all with `DevPassword123!`:
 
