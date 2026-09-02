@@ -1,0 +1,2080 @@
+{
+  "info": {
+    "name": "FWA Sales — Supply Chain Dashboard API (local)",
+    "description": "The admin/web dashboard half of the platform: Device Partner, IOH and MPX.\n\nRun the folders in order with the Postman Runner and it walks a real unit from an IOH-issued number all the way to a salesman's phone. Folder 09 is the point of the whole thing — it logs in as the AE and proves the mobile app can now see the stock.\n\nRe-runnable: folder 02 mints a fresh batch of MSISDNs each run, because numbers are unique platform-wide.\n\nAUTH: three roles are involved, so tokens are per-role collection variables (dpToken / iohToken / mpxToken) rather than one shared token. Each request picks the right one.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000/v1"
+    },
+    {
+      "key": "adminPassword",
+      "value": "DevPassword123!"
+    },
+    {
+      "key": "dpUser",
+      "value": "dp.advan"
+    },
+    {
+      "key": "iohUser",
+      "value": "ioh.hq"
+    },
+    {
+      "key": "mpxUser",
+      "value": "mpx.bkl"
+    },
+    {
+      "key": "aeCode",
+      "value": "AE-BENGKULU1"
+    },
+    {
+      "key": "aePassword",
+      "value": "Password123!"
+    },
+    {
+      "key": "dpToken",
+      "value": ""
+    },
+    {
+      "key": "iohToken",
+      "value": ""
+    },
+    {
+      "key": "mpxToken",
+      "value": ""
+    },
+    {
+      "key": "aeToken",
+      "value": ""
+    },
+    {
+      "key": "callPlanId",
+      "value": ""
+    },
+    {
+      "key": "deviceModelId",
+      "value": ""
+    },
+    {
+      "key": "devicePartnerId",
+      "value": ""
+    },
+    {
+      "key": "addressId",
+      "value": ""
+    },
+    {
+      "key": "aeId",
+      "value": ""
+    },
+    {
+      "key": "msisdnPoId",
+      "value": ""
+    },
+    {
+      "key": "devicePoId",
+      "value": ""
+    },
+    {
+      "key": "shipmentId",
+      "value": ""
+    },
+    {
+      "key": "msisdns",
+      "value": ""
+    },
+    {
+      "key": "firstMsisdn",
+      "value": ""
+    },
+    {
+      "key": "pairs",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Sign in (all three roles)",
+      "description": "Each company signs in separately. Note what /admin/me returns: role plus exactly one organisation binding, which is the entire authorisation context for everything that follows.",
+      "item": [
+        {
+          "name": "01 Login as Device Partner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Bound to ADVAN. Sees only its own POs.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{dpUser}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"deviceLabel\": \"Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('dpToken', b.accessToken);",
+                  "pm.test('logged in', () => pm.response.to.have.status(200));",
+                  "console.log(b.profile.role, '->', b.profile.organisation ? b.profile.organisation.code : '(global read)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Login as IOH",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Global read by design — IOH is the counterparty to every partner.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{iohUser}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"deviceLabel\": \"Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('iohToken', b.accessToken);",
+                  "pm.test('logged in', () => pm.response.to.have.status(200));",
+                  "console.log(b.profile.role, '->', b.profile.organisation ? b.profile.organisation.code : '(global read)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Login as MPX",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Bound to MPX-BKL-01. Sees only its own orders, stock and AEs.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{mpxUser}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"deviceLabel\": \"Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('mpxToken', b.accessToken);",
+                  "pm.test('logged in', () => pm.response.to.have.status(200));",
+                  "console.log(b.profile.role, '->', b.profile.organisation ? b.profile.organisation.code : '(global read)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Who am I (MPX)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "me"
+              ]
+            },
+            "description": "The dashboard builds its sidebar from this response.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('has org binding', () => pm.expect(pm.response.json().organisation.code).to.eql('MPX-BKL-01'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 An AE token is rejected here",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "me"
+              ]
+            },
+            "description": "Proves the audience split. An AE token carries no `aud` claim, so the admin decoder refuses it before any handler runs. Run folder 09 first if aeToken is empty.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{aeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AE token cannot reach /admin', () => pm.expect(pm.response.code).to.be.oneOf([401]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — Reference data",
+      "description": "Master data the forms are built from. Small fixed sets, returned unpaginated.",
+      "item": [
+        {
+          "name": "01 Call plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/call-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "call-plans"
+              ]
+            },
+            "description": "Note `kind`: Saldo Mobo is a BALANCE product and carries no quotaGb. Branch on kind, not on the absence of the quota.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json().data;",
+                  "pm.collectionVariables.set('callPlanId', b.find(p => p.code === 'DATA_50GB').callPlanId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Brands",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/brands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "brands"
+              ]
+            },
+            "description": "Two rows. displayName is the brand (IM3), outletName the storefront (Gerai IM3) — the mockups used both interchangeably.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "03 Device models",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/device-models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "device-models"
+              ]
+            },
+            "description": "listPriceIdr may be null, meaning the model has no confirmed price and cannot be ordered.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json().data;",
+                  "const m = b.find(x => x.modelCode === 'ADVAN V1 PRO');",
+                  "pm.collectionVariables.set('deviceModelId', m.deviceModelId);",
+                  "pm.collectionVariables.set('devicePartnerId', m.devicePartner.devicePartnerId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Device partners (IOH/MPX only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/device-partners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "device-partners"
+              ]
+            },
+            "description": "A DP gets 403 here — it has no business enumerating its competitors.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "05 Device partners as DP — expect 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/device-partners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "device-partners"
+              ]
+            },
+            "description": "The role boundary, demonstrated.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('DP is refused', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 MPX stock points",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reference/mpx",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "reference",
+                "mpx"
+              ]
+            },
+            "description": "A DP ships to them, so it needs their names.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — MSISDN PO (DP asks, IOH supplies)",
+      "description": "The first use case, and the one that exercises every mechanism: org scoping across two companies, a status machine, bulk import with a dry run, and quantity conservation.",
+      "item": [
+        {
+          "name": "01 DP raises a request for 5 numbers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos"
+              ]
+            },
+            "description": "The PO code is generated server-side as {DP}-{YYYYMMDD}-{SEQ} and is never accepted from the client.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callPlanId\": \"{{callPlanId}}\",\n  \"brandCode\": \"IM3\",\n  \"qtyRequested\": 5,\n  \"note\": \"Postman walkthrough\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Fresh batch each run: MSISDNs are unique platform-wide, so a re-run would",
+                  "// otherwise collide with the numbers the last run issued.",
+                  "const seed = Date.now() % 100000000;",
+                  "const list = [];",
+                  "for (let i = 0; i < 5; i++) { list.push('628' + String(seed * 10 + i).padStart(10, '0').slice(-10)); }",
+                  "pm.collectionVariables.set('msisdns', JSON.stringify(list));",
+                  "pm.collectionVariables.set('firstMsisdn', list[0]);",
+                  "console.log('this run will issue:', list.join(', '));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('msisdnPoId', b.msisdnPoId);",
+                  "pm.test('created', () => pm.response.to.have.status(201));",
+                  "console.log('PO:', b.poCode, '|', b.status);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 IOH sees it (global read)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos"
+              ]
+            },
+            "description": "IOH sees every partner's requests. A DP sees only its own.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{iohToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "03 IOH picks it up",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/process",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "process"
+              ]
+            },
+            "description": "Transition DIAJUKAN -> DIPROSES.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{iohToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Diproses\"\n}"
+            }
+          }
+        },
+        {
+          "name": "04 Dry run the import",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/supply:validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "supply:validate"
+              ]
+            },
+            "description": "Writes nothing. The operator must see the parsed numbers before committing them. Note the 08… numbers come back normalised to 62….",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{iohToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          }
+        },
+        {
+          "name": "05 IOH supplies the numbers",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/supply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "supply"
+              ]
+            },
+            "description": "All or nothing, and the count must equal qtyRequested exactly. Supplied numbers become fwa_inventory rows at MSISDN_ISSUED with no IMEI — invisible to the mobile app.\n\nSend an Idempotency-Key header and replay it: the original result comes back and nothing is inserted twice.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{iohToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('supplied', () => pm.response.to.have.status(200));",
+                  "console.log('supplied:', pm.response.json().supplied);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 A DP cannot supply its own request — expect 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/supply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "supply"
+              ]
+            },
+            "description": "The whole point of two organisations is that one cannot do the other's step.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('refused', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Download the issued numbers (CSV)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/msisdns?format=csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "msisdns"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "csv"
+                }
+              ]
+            },
+            "description": "Backs the download icon. xlsx is not offered — it would mean adding a spreadsheet dependency; CSV opens in Excel.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Hard-bundle pairing (DP)",
+      "description": "One IMEI per MSISDN. The counts must match exactly — a partial pairing is rejected rather than applied, because half a bundle is a unit nobody can ship and nobody can find.",
+      "item": [
+        {
+          "name": "01 What still needs an IMEI",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/pairing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "pairing"
+              ]
+            },
+            "description": "The unpaired numbers on this PO.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "02 Dry run the pairing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/pairing:validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "pairing:validate"
+              ]
+            },
+            "description": "Shares its checks with the real endpoint, so the preview cannot drift.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pairs\": {{pairs}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const list = JSON.parse(pm.collectionVariables.get('msisdns'));",
+                  "const seed = Date.now() % 1000000;",
+                  "const pairs = list.map((m, i) => ({ msisdn: m, imei: String(35000000000000 + seed * 10 + i) }));",
+                  "pm.collectionVariables.set('pairs', JSON.stringify(pairs));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Pair them",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/msisdn-pos/{{msisdnPoId}}/pairing",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "msisdn-pos",
+                "{{msisdnPoId}}",
+                "pairing"
+              ]
+            },
+            "description": "Units move to PAIRED. Every IMEI must be unique platform-wide.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pairs\": {{pairs}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('paired', () => pm.response.to.have.status(200));",
+                  "console.log('paired:', pm.response.json().paired);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Delivery addresses (MPX)",
+      "description": "Required before an MPX can order: the PO carries the address the goods ship to.",
+      "item": [
+        {
+          "name": "01 Add an address",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "addresses"
+              ]
+            },
+            "description": "mpxId is absent from the body on purpose — the address belongs to whichever MPX is calling, taken from the token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Gudang Utama\",\n  \"recipientName\": \"Budi Santoso\",\n  \"recipientPhone\": \"081234567890\",\n  \"line1\": \"Jl. Mawar No. 1\",\n  \"city\": \"Bengkulu\",\n  \"province\": \"Bengkulu\",\n  \"isDefault\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('addressId', pm.response.json().addressId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 List them",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/addresses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "addresses"
+              ]
+            },
+            "description": "Default first, then alphabetical — the PO form preselects the default.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Device PO (MPX orders, DP fulfils)",
+      "description": "The mirror image of folder 02: the MPX raises it, the DP acts on it.",
+      "item": [
+        {
+          "name": "01 MPX orders 5 devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos"
+              ]
+            },
+            "description": "unitPriceIdr is snapshotted from the catalogue here and never read back, so a later price change cannot rewrite a closed order. totalIdr = unitPriceIdr × qty is enforced by a database CHECK.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"devicePartnerId\": \"{{devicePartnerId}}\",\n  \"deviceModelId\": \"{{deviceModelId}}\",\n  \"brandCode\": \"IM3\",\n  \"qty\": 5,\n  \"addressId\": \"{{addressId}}\",\n  \"picName\": \"Budi Santoso\",\n  \"picPhone\": \"081234567890\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('devicePoId', b.devicePoId);",
+                  "pm.test('created', () => pm.response.to.have.status(201));",
+                  "console.log(b.poCode, '| total Rp', b.totalIdr.toLocaleString('id-ID'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 DP accepts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "accept"
+              ]
+            },
+            "description": "Transition DIAJUKAN -> DIPROSES.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Diterima, diproses\"\n}"
+            }
+          }
+        },
+        {
+          "name": "03 Dry run the bundle attachment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/bundles:validate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "bundles:validate"
+              ]
+            },
+            "description": "Each unit must be paired, unattached, and have reached this DP through its own MSISDN PO — that last condition stops a partner attaching a competitor's stock.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          }
+        },
+        {
+          "name": "04 DP attaches the bundles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/bundles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "bundles"
+              ]
+            },
+            "description": "Units move to ASSIGNED and pick up the destination MPX. Rows are locked FOR UPDATE so two admins cannot commit the same bundle twice.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('attached', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Detail, with the Riwayat panel",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}"
+              ]
+            },
+            "description": "statusHistory is what the Riwayat panel renders, straight through. It is trustworthy only because every transition writes a row in the same transaction as the status change.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Shipment (DP)",
+      "description": "The screen the UI review found missing entirely: the Riwayat panel already showed a courier and resi, and nothing produced them.",
+      "item": [
+        {
+          "name": "01 DP ships with courier + AWB",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/shipment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "shipment"
+              ]
+            },
+            "description": "courierName is free text — couriers are manual for v1. Writes '{courier} | {awb}' into the status history.\n\nRefused unless every unit is attached: receipt is all-or-nothing, so shipping short guarantees an order that can never be confirmed.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courierName\": \"J&T Express\",\n  \"awb\": \"JD0463672772\",\n  \"estimatedDeliveryDate\": \"2026-09-08\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('shipmentId', b.shipmentId);",
+                  "pm.test('shipped', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 Advance the tracker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/shipments/{{shipmentId}}/milestones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shipments",
+                "{{shipmentId}}",
+                "milestones"
+              ]
+            },
+            "description": "Entered by hand — no courier integration in v1. Each milestone is recorded once; repeating one would draw a bar that goes backwards.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{dpToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"milestone\": \"IN_TRANSIT\",\n  \"note\": \"Transit Jakarta\"\n}"
+            }
+          }
+        },
+        {
+          "name": "03 Delivery progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/shipment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "shipment"
+              ]
+            },
+            "description": "Backs the four-step tracker. Milestones come back in tracker order, so the client renders them without sorting.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Goods receipt (MPX)",
+      "description": "One final, all-or-nothing confirmation. If the box is short, the reshipping happens outside this system and the MPX confirms only once the full list has arrived.",
+      "item": [
+        {
+          "name": "01 MPX opens the delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/inspect",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "inspect"
+              ]
+            },
+            "description": "Transition DIKIRIM -> PERIKSA.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Mulai pemeriksaan\"\n}"
+            }
+          }
+        },
+        {
+          "name": "02 Confirm the whole delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/device-pos/{{devicePoId}}/receipt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "device-pos",
+                "{{devicePoId}}",
+                "receipt"
+              ]
+            },
+            "description": "Units move to RECEIVED and are stamped with receivedAt — the key automatic allocation orders by.\n\nIf units were missing this returns 422 RECEIPT_INCOMPLETE, nothing is written, and the order stays at PERIKSA.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmed\": true,\n  \"note\": \"Semua unit lengkap\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('received', () => pm.response.to.have.status(200));",
+                  "console.log('received:', pm.response.json().qtyReceived);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 — Stock & allocation (MPX)",
+      "description": "Where the seam closes. The allocation endpoint is the only writer of fwa_inventory.allocated_ae_id.",
+      "item": [
+        {
+          "name": "01 Stock by device model",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stock"
+              ]
+            },
+            "description": "Tersedia = received and unallocated; Dialokasikan = allocated and not yet activated; Total = the two added. A sold unit leaves all three.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "02 Allocatable units, oldest first",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stock/bundles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stock",
+                "bundles"
+              ]
+            },
+            "description": "Backs the Manual picker. Ordered by receivedAt exactly as automatic allocation would take them.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "03 Who can I allocate to?",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/account-executives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "account-executives"
+              ]
+            },
+            "description": "The endpoint that could not exist on the AE audience: golden rule 2 scopes every AE-facing list to the token, so no AE route returns more than one AE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json().data;",
+                  "pm.collectionVariables.set('aeId', b[0].aeId);",
+                  "console.log('allocating to', b[0].aeCode);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 About that AE",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/account-executives/{{aeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "account-executives",
+                "{{aeId}}"
+              ]
+            },
+            "description": "The Tentang AE panel: ID, Brand, Branch, and what they hold. brandScope HYBRID means the AE may sell either brand — displayed, not enforced.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "05 Allocate 5 units (AUTO / FIFO)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/allocations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "allocations"
+              ]
+            },
+            "description": "THE SEAM. After this the units are visible to that salesman's barcode scanner.\n\nAUTO takes the oldest received units under FOR UPDATE SKIP LOCKED, so two admins allocating the last unit produce one success and one clean 409 — never two handovers of the same device.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aeId\": \"{{aeId}}\",\n  \"mode\": \"AUTO\",\n  \"items\": [\n    {\n      \"deviceModelId\": \"{{deviceModelId}}\",\n      \"qty\": 5\n    }\n  ],\n  \"note\": \"Alokasi Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('allocated', () => pm.response.to.have.status(201));",
+                  "console.log('handed over:', pm.response.json().msisdns.join(', '));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 Allocating the same units again — expect failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/allocations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "allocations"
+              ]
+            },
+            "description": "A unit is allocated once. Enforced by a unique constraint as well as the row lock.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aeId\": \"{{aeId}}\",\n  \"mode\": \"MANUAL\",\n  \"msisdns\": {{msisdns}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('refused', () => pm.expect(pm.response.code).to.be.oneOf([409, 422]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Stock after allocation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stock"
+              ]
+            },
+            "description": "Tersedia has dropped to 0 and Dialokasikan risen by 5. Total is unchanged: the MPX still holds them, they are just spoken for.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mpxToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — Verify on the AE mobile app",
+      "description": "The point of the whole programme. These are the SAME endpoints the Flutter app calls, completely unchanged by this work — the units simply appear now that they have been allocated.",
+      "item": [
+        {
+          "name": "01 Log in as the AE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "The mobile app's own login. Untouched by the supply chain work.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aeCode\": \"{{aeCode}}\",\n  \"password\": \"{{aePassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('aeToken', pm.response.json().accessToken);",
+                  "pm.test('logged in', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 My stock",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "me"
+              ]
+            },
+            "description": "Should now include the 5 units just allocated. Before allocation this returned nothing for them — received is not the same as allocated.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{aeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('AE now holds', pm.response.json().meta.total, 'units');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 Scan one of them",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/msisdn/{{firstMsisdn}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "msisdn",
+                "{{firstMsisdn}}"
+              ]
+            },
+            "description": "The barcode scanner path. Returns eligible: true with the IMEI and modem type resolved server-side — the client never asserts them.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{aeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "pm.test('eligible', () => pm.expect(b.eligible).to.be.true);",
+                  "console.log('IMEI', b.imei, '| modem', b.deviceModel ? b.deviceModel.modelCode : '(uncategorised)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 Offline bootstrap",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sync/bootstrap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sync",
+                "bootstrap"
+              ]
+            },
+            "description": "What the app caches for offline use. Carries the same units.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{aeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "05 A supply-chain number is invisible — expect 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/msisdn/6289999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "msisdn",
+                "6289999999999"
+              ]
+            },
+            "description": "A number that is not allocated to this AE does not exist as far as the app is concerned. This is the guard that keeps unpaired stock off the scanner.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{aeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('not found', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

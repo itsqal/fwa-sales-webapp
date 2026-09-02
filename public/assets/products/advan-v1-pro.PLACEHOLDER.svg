@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- PLACEHOLDER: advan-v1-pro — replace with supplier product render -->
+  <g transform="rotate(0 32 62)"><rect x="29.4" y="32" width="5.2" height="30" rx="2.6" fill="none" stroke="#9AA0A6" stroke-width="2.4"/></g>
+  <g transform="rotate(0 48 62)"><rect x="45.4" y="28" width="5.2" height="34" rx="2.6" fill="none" stroke="#9AA0A6" stroke-width="2.4"/></g>
+  <g transform="rotate(0 64 62)"><rect x="61.4" y="32" width="5.2" height="30" rx="2.6" fill="none" stroke="#9AA0A6" stroke-width="2.4"/></g>
+  <rect x="16" y="60" width="64" height="16" rx="5" fill="#FFFFFF" stroke="#9AA0A6" stroke-width="2.4"/>
+  <rect x="24" y="66" width="13" height="3.4" rx="1.7" fill="#D6D9DC"/>
+</svg>

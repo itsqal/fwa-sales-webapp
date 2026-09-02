@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 32" width="72" height="32">
+  <!-- PLACEHOLDER: IM3 is a registered trademark. Replace with the official logo. -->
+  <rect x="1" y="1" width="70" height="30" rx="6" fill="none" stroke="#D6D9DC"
+        stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="36" y="21" text-anchor="middle" fill="#C80078"
+        font-family="Poppins, Montserrat, sans-serif" font-size="13" font-weight="600">IM3</text>
+</svg>

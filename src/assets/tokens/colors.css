@@ -1,0 +1,51 @@
+/* HiFi Air Supply Chain Dashboard — colour tokens
+ *
+ * Every value below was sampled directly from the source mockups in
+ * `Full UI per use case/`, not eyeballed. See README.md §4 for the one
+ * open question (three different magentas appear in the mockups).
+ */
+
+:root {
+  /* ---- brand ------------------------------------------------------- */
+  /* Confirmed against the official logo export (1 Sep 2026). These three match
+   * the AE mobile asset pack exactly, so both products share one palette. */
+  --hifi-magenta:        #C80078;  /* primary. Logo "hi", row actions, active nav */
+  --hifi-magenta-cta:    #E90289;  /* "Buat PO" / "Alokasi Baru" CTA — see README §4 */
+  --hifi-amber:          #F5AF00;  /* logo "fi", highlights */
+  --hifi-charcoal:       #464A4D;  /* logo "air", body text */
+  --hifi-ink:            #2A2E31;  /* headings, "indosat" wordmark */
+  --hifi-tint:           #FBE5F1;  /* selected card fill on light surfaces */
+  --hifi-accent-gold:    #E9C057;  /* secondary row actions (view / edit) */
+
+  /* ---- status: MSISDN PO and device PO ------------------------------ */
+  --status-diajukan:     #FDB810;
+  --status-diproses:     #539BFF;
+  --status-dikirim:      #B931A9;
+  --status-periksa:      #E64646;  /* see README §4 — red reads as an error */
+  --status-diterima:     #31B9AC;
+  --status-dibatalkan:   #5A5A5A;
+  --status-ditolak:      #E64646;
+
+  /* status text sits on a 12% tint of its own hue */
+  --status-fg-on-tint:   #FFFFFF;
+
+  /* ---- surfaces ----------------------------------------------------- */
+  --surface-page:        #FAFAFA;
+  --surface-card:        #FFFFFF;
+  --surface-sidebar:     #FFFFFF;
+  --surface-muted:       #F5F5F6;
+  --border-subtle:       #EAEAEA;
+  --border-strong:       #D6D9DC;
+
+  /* ---- text --------------------------------------------------------- */
+  --text-primary:        #2A2E31;
+  --text-secondary:      #6B7075;
+  --text-muted:          #9AA0A6;
+  --text-on-primary:     #FFFFFF;
+
+  /* ---- geometry ----------------------------------------------------- */
+  --radius-card:         12px;
+  --radius-control:      10px;
+  --radius-pill:         999px;
+  --sidebar-width:       272px;
+}
