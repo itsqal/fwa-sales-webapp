@@ -53,7 +53,8 @@ first — this dashboard is useless without it, and it talks to the API over loo
   because the API's nginx block already claims `<YOUR_DOMAIN>` and serves everything under
   it. TLS issuance in section 7 fails until DNS resolves, and propagation takes time, so
   set this up first.
-- **The `deploy` user, ufw and nginx**, all set up while deploying the API.
+- **A login account, ufw and nginx**, all set up while deploying the API. This guide
+  uses `anakingfaiqal`, the account the API was deployed with.
 - **Swap, or 2 GB of genuinely free RAM.** See [section 5](#5-build-it). This is the step
   that bites.
 
@@ -116,9 +117,13 @@ npm --version
 
 ## 4. Get the code onto the server
 
-The API lives in `/srv/fwa/backend`. Put this beside it:
+The API lives in `/srv/fwa/backend`. Put this beside it. `/srv` belongs to `root`, so
+creating the directory takes `sudo` — and then handing it to your own account, or nothing
+you do afterwards can write to it:
 
 ```bash
+sudo mkdir -p /srv/fwa/webapp
+sudo chown "$(id -un):$(id -gn)" /srv/fwa/webapp
 cd /srv/fwa
 ```
 
@@ -129,12 +134,15 @@ git clone <YOUR_REPO_URL> webapp
 cd webapp
 ```
 
+Clone as `anakingfaiqal`, not with `sudo`. A tree owned by `root` cannot be built or
+served by the service account.
+
 **Or copy from your machine** (run this on your laptop, not the VPS):
 
 ```bash
 rsync -avz \
   --exclude 'node_modules' --exclude '.next' --exclude '.env' --exclude '.env.local' \
-  D:/FWA_sales/webapp/ deploy@<SERVER_IP>:/srv/fwa/webapp/
+  D:/FWA_sales/webapp/ anakingfaiqal@<SERVER_IP>:/srv/fwa/webapp/
 ```
 
 Never copy `node_modules` up. It contains binaries compiled for your laptop's platform,
@@ -221,18 +229,57 @@ The machine is too small to build on. Build somewhere else and copy the result:
 # On a machine with more RAM, running the same Ubuntu release:
 cd /path/to/webapp
 npm ci && npm run build
-rsync -avz .next/ deploy@<SERVER_IP>:/srv/fwa/webapp/.next/
+rsync -avz --delete \
+  --exclude 'dev' --exclude 'cache' \
+  .next/ anakingfaiqal@<SERVER_IP>:/srv/fwa/webapp/.next/
 ```
 
 The server still needs `npm ci` for the runtime dependencies, but never runs a build.
 Match the Ubuntu release and the Node major version: `.next` is portable between
 machines, `node_modules` is not, which is why only `.next` is copied.
 
+The two exclusions matter. On a machine that has also run `npm run dev`, `.next` is
+mostly Turbopack's development cache — measured here at 1.2 GB of `dev/` and 207 MB of
+`cache/` wrapped around about **27 MB** of actual production output. Neither is any use
+on a server that only serves, and copying them turns a quick transfer into a long one.
+
+**Disk to allow for:** roughly 640 MB of `node_modules` plus the built output. `npm ci`
+is by far the larger half.
+
 ---
 
 ## 6. Run it as a service
 
-A unit file ships with the repository:
+### First, the user and the ownership
+
+The unit ships with `User=anakingfaiqal` — the account the API was deployed with. Confirm
+it is yours, and find the group, which is not always the same word:
+
+```bash
+id -un && id -gn        # expect: anakingfaiqal  anakingfaiqal
+```
+
+If `id -gn` prints something else, edit `Group=` in the unit to match it before copying.
+
+The account has to **own the code directory**. The server writes `.next` while running, so
+a tree cloned as `root` is read-only to the service and it will not start:
+
+```bash
+sudo chown -R anakingfaiqal:"$(id -gn)" /srv/fwa/webapp
+ls -ld /srv/fwa/webapp        # confirm the owner column reads anakingfaiqal
+```
+
+`/srv` is owned by `root`, so creating `/srv/fwa/webapp` in [section 4](#4-get-the-code-onto-the-server)
+needed `sudo` — which is exactly how a directory ends up owned by the wrong account.
+Run the `chown` even if you think you do not need it.
+
+> **If the code lives under `/home` instead** — `/home/anakingfaiqal/webapp`, say — you
+> must also delete the `ProtectHome=true` line from the unit. It hides `/home` from the
+> service, including the service's own working directory, and the start fails with
+> `status=200/CHDIR`, which looks exactly like a permissions problem and is not one. Change
+> `WorkingDirectory=`, `EnvironmentFile=` and `ReadWritePaths=` to match the real path too.
+
+### Install it
 
 ```bash
 sudo cp /srv/fwa/webapp/deploy/fwa-dashboard.service /etc/systemd/system/
@@ -240,7 +287,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now fwa-dashboard
 ```
 
-It runs as `deploy` from `/srv/fwa/webapp`, reads `.env`, restarts on failure, and comes
+**Build before you start it.** `ReadWritePaths` names `.next`, and systemd cannot build the
+mount namespace for a directory that does not exist — it fails with `status=226/NAMESPACE`,
+which also reads like a permissions problem and also is not one.
+
+It runs as `anakingfaiqal` from `/srv/fwa/webapp`, reads `.env`, restarts on failure, and comes
 back after a reboot. Check it:
 
 ```bash
@@ -515,9 +566,25 @@ curl http://127.0.0.1:3000/api/health
 **`Could not find a production build`.** `next start` ran without `.next` present, usually
 because the build failed and you restarted the service anyway. Build, then restart.
 
-**The service will not start: `status=203/EXEC`.** systemd cannot find Node at
-`/usr/bin/node`. Check with `which node` and correct `ExecStart` in the unit file, then
-`sudo systemctl daemon-reload`.
+**The service will not start.** systemd reports these as numeric status codes that all
+look alike. Get the real one first:
+
+```bash
+systemctl status fwa-dashboard --no-pager -l
+journalctl -u fwa-dashboard -n 50 --no-pager
+```
+
+| Status | Cause | Fix |
+|---|---|---|
+| `217/USER` | The `User=` or `Group=` in the unit does not exist — the group often differs from the username | `id -un && id -gn`, then correct the unit |
+| `200/CHDIR` | `WorkingDirectory=` is wrong, or it is under `/home` while `ProtectHome=true` | Fix the path, or delete `ProtectHome=true` |
+| `226/NAMESPACE` | `ReadWritePaths=` names a directory that does not exist — usually `.next`, because nothing has been built yet | Build first, then start |
+| `203/EXEC` | Node is not at `/usr/bin/node` | `which node`, correct `ExecStart` |
+| `EACCES` / `EROFS` in the journal | `anakingfaiqal` does not own the code directory | `sudo chown -R anakingfaiqal:"$(id -gn)" /srv/fwa/webapp` |
+| `Failed to load environment files` | `EnvironmentFile=` path is wrong, or `.env` is unreadable by the service user | Check the path; `chmod 644 .env` |
+
+After editing the unit file, `sudo systemctl daemon-reload` before restarting — systemd
+otherwise keeps running the version it loaded.
 
 **The build fails on a type error.** The generated API types no longer match the code —
 usually because the API's contract changed. Regenerate them on your machine

@@ -4,7 +4,21 @@
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now fwa-dashboard
 #
-# Substitute the user and paths if you did not follow DEPLOYMENT.md exactly.
+# ---------------------------------------------------------------------------
+# NOT RUNNING AS `anakingfaiqal`? Change three things and nothing else.
+#
+#   User=  Group=          your login user — `id -un` and `id -gn`
+#   WorkingDirectory=      wherever the code actually is
+#   EnvironmentFile=       the .env inside it
+#   ReadWritePaths=        that directory's .next
+#
+# The user must OWN the directory — it writes `.next` while running:
+#   sudo chown -R <user>:<group> /srv/fwa/webapp
+#
+# If the code lives under /home, also delete `ProtectHome=true` below, or
+# systemd hides the directory from its own service and the start fails with
+# status=200/CHDIR.
+# ---------------------------------------------------------------------------
 
 [Unit]
 Description=FWA Supply Chain Dashboard (Next.js)
@@ -17,8 +31,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=deploy
-Group=deploy
+User=anakingfaiqal
+Group=anakingfaiqal
 WorkingDirectory=/srv/fwa/webapp
 
 # Config lives in .env beside the code. Required rather than optional: a
@@ -52,6 +66,10 @@ ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 # Next writes its runtime cache here; everything else stays read-only.
+#
+# This path must already exist — build before the first `systemctl start`, or
+# systemd cannot construct the mount namespace and fails with
+# status=226/NAMESPACE, which reads like a permissions problem and is not.
 ReadWritePaths=/srv/fwa/webapp/.next
 
 [Install]

@@ -16,23 +16,16 @@ import { DevicePoPairingWizard } from "./device-po-pairing-wizard";
 import { BundleListDialog } from "./bundle-list-dialog";
 
 /**
- * *Manajemen PO* — the Device Partner's side: accept the order, attach bundles
- * to it, hand it to a courier.
+ * *Manajemen PO* — the Device Partner's whole side of a device order: accept it,
+ * attach bundles, hand it to a courier, then watch the tracker.
  *
- * `initialStatus` lets the *Pengiriman* entry in the sidebar land on the same
- * screen pre-filtered to what is waiting to be dispatched, rather than
- * duplicating the whole list somewhere else.
+ * Shipping lives here rather than on a screen of its own. It is one action on a
+ * row — the truck in the *Delivery* column, on an order at `DIPROSES` — and a
+ * separate route for it showed the same table filtered to the one status, which
+ * is empty whenever nothing happens to be waiting to go out.
  */
-export function DpDevicePoScreen({
-  title = "Manajemen PO",
-  subtitle = "Pairing and delivery Purchase Order MPX",
-  initialStatus,
-}: {
-  title?: string;
-  subtitle?: string;
-  initialStatus?: string;
-}) {
-  const list = useListState(10, initialStatus);
+export function DpDevicePoScreen() {
+  const list = useListState();
   const query = useDevicePos({
     page: list.page,
     perPage: list.perPage,
@@ -52,7 +45,10 @@ export function DpDevicePoScreen({
 
   return (
     <>
-      <PageHeader title={title} subtitle={subtitle}>
+      <PageHeader
+        title="Manajemen PO"
+        subtitle="Pairing and delivery Purchase Order MPX"
+      >
         <SearchFilterBar
           placeholder="Cari Kode PO"
           value={list.q}

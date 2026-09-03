@@ -43,11 +43,6 @@ export const NAV: Record<AdminRole, NavSection[]> = {
           href: "/dp/device-po",
           icon: icon("purchase-order-device"),
         },
-        {
-          label: "Pengiriman",
-          href: "/dp/shipments",
-          icon: icon("stock"),
-        },
       ],
     },
     {

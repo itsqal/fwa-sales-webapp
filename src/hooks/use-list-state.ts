@@ -20,14 +20,11 @@ export interface ListState {
  * narrows twenty pages to one leaves the operator on page 14 looking at an
  * empty table and concluding there are no results.
  */
-export function useListState(
-  initialPerPage = 10,
-  initialStatus?: string,
-): ListState {
+export function useListState(initialPerPage = 10): ListState {
   const [page, setPage] = useState(1);
   const [perPage, setPerPageValue] = useState(initialPerPage);
   const [q, setQValue] = useState("");
-  const [status, setStatusValue] = useState<string | undefined>(initialStatus);
+  const [status, setStatusValue] = useState<string | undefined>(undefined);
 
   const setPerPage = useCallback((value: number) => {
     setPerPageValue(value);
