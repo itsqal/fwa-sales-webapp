@@ -39,6 +39,7 @@ export function DpMsisdnPoScreen() {
           value={list.q}
           onChange={list.setQ}
           statuses={MSISDN_PO_STATUSES}
+          statusKind="msisdn-po"
           status={list.status}
           onStatusChange={list.setStatus}
         />

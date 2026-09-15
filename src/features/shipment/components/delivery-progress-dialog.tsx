@@ -16,22 +16,18 @@ import { useSession } from "@/components/shell/session-context";
 import { cn } from "@/lib/utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { count, dateDayMonth, dateId } from "@/lib/format";
-import {
-  SHIPMENT_MILESTONES,
-  milestoneIcon,
-  milestoneLabel,
-  type ShipmentMilestone,
-} from "@/lib/status";
-import type { DevicePo } from "@/lib/api/types";
+import { TRACKER_STEPS, type TrackerStep } from "@/lib/status";
+import type { DevicePo, Shipment } from "@/lib/api/types";
 import { useShipment } from "@/features/device-po/api/hooks";
 import { useAddMilestone } from "../api/hooks";
 
 /**
- * *Delivery Progress* — the four-milestone tracker, read-only for the MPX.
+ * *Delivery Progress* — Preparing → Shipped → In Transit → Delivered. Read-only
+ * for the MPX.
  *
  * The Device Partner gets a button to advance it, because there is no courier
- * webhook in v1 and somebody has to record that the box moved. Milestones come
- * back in tracker order, so nothing here sorts them.
+ * webhook in v1 and somebody has to record that the box moved. How the four steps
+ * map onto the API's milestones lives in `TRACKER_STEPS`.
  */
 export function DeliveryProgressDialog({
   po,
@@ -46,21 +42,16 @@ export function DeliveryProgressDialog({
   const shipment = useShipment(po?.devicePoId, open);
   const addMilestone = useAddMilestone();
 
-  const reached = new Set(
-    (shipment.data?.milestones ?? []).map((entry) => entry.milestone),
-  );
-  const nextMilestone = SHIPMENT_MILESTONES.find(
-    (milestone) => !reached.has(milestone),
-  );
+  const progress = shipment.data ? trackProgress(shipment.data, po) : null;
 
-  async function advance(milestone: ShipmentMilestone) {
-    if (!shipment.data) return;
+  async function advance(step: TrackerStep) {
+    if (!shipment.data || !step.recordAs) return;
     try {
       await addMilestone.mutateAsync({
         shipmentId: shipment.data.shipmentId,
-        milestone,
+        milestone: step.recordAs,
       });
-      toast.success(`Status pengiriman: ${milestoneLabel(milestone)}.`);
+      toast.success(`Status pengiriman: ${step.label}.`);
     } catch (cause) {
       toast.error(
         cause instanceof ApiRequestError
@@ -85,7 +76,7 @@ export function DeliveryProgressDialog({
             <Skeleton className="h-6 w-64" />
             <Skeleton className="h-24 w-full" />
           </div>
-        ) : !shipment.data ? (
+        ) : !shipment.data || !progress ? (
           <p className="mt-6 text-sm text-text-secondary">
             Pengiriman untuk PO ini belum dibuat.
           </p>
@@ -112,55 +103,47 @@ export function DeliveryProgressDialog({
               <div className="h-1 w-full rounded-full bg-border-subtle">
                 <div
                   className="h-1 rounded-full bg-hifi-magenta transition-[width]"
-                  style={{
-                    width: `${progressWidth(reached.size)}%`,
-                  }}
+                  style={{ width: `${progressWidth(progress.furthest)}%` }}
                 />
               </div>
 
               <ol className="mt-6 grid grid-cols-4 gap-4">
-                {SHIPMENT_MILESTONES.map((milestone) => {
-                  const entry = shipment.data?.milestones?.find(
-                    (item) => item.milestone === milestone,
-                  );
-                  const done = Boolean(entry);
-                  return (
-                    <li
-                      key={milestone}
-                      className="flex flex-col items-center gap-2 text-center"
+                {progress.steps.map(({ step, reached, occurredAt }) => (
+                  <li
+                    key={step.key}
+                    className="flex flex-col items-center gap-2 text-center"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-11 items-center justify-center rounded-full border-2 border-hifi-magenta",
+                        reached
+                          ? "bg-hifi-magenta text-white"
+                          : "bg-surface-card text-hifi-magenta",
+                      )}
                     >
-                      <span
-                        className={cn(
-                          "flex size-11 items-center justify-center rounded-full border-2 border-hifi-magenta",
-                          done
-                            ? "bg-hifi-magenta text-white"
-                            : "bg-surface-card text-hifi-magenta",
-                        )}
-                      >
-                        <PackIcon src={milestoneIcon(milestone)} />
-                      </span>
-                      <span className="text-sm font-medium text-text-primary">
-                        {milestoneLabel(milestone)}
-                      </span>
-                      <span className="text-sm text-text-secondary">
-                        {entry ? dateDayMonth(entry.occurredAt) : "—"}
-                      </span>
-                    </li>
-                  );
-                })}
+                      <PackIcon src={step.icon} />
+                    </span>
+                    <span className="text-sm font-medium text-text-primary">
+                      {step.label}
+                    </span>
+                    <span className="text-sm text-text-secondary">
+                      {occurredAt ? dateDayMonth(occurredAt) : "—"}
+                    </span>
+                  </li>
+                ))}
               </ol>
             </div>
 
-            {me.role === "DP_ADMIN" && nextMilestone && (
+            {me.role === "DP_ADMIN" && progress.next && (
               <Button
-                onClick={() => advance(nextMilestone)}
+                onClick={() => progress.next && advance(progress.next)}
                 disabled={addMilestone.isPending}
                 className="mt-8 h-12 w-full rounded-full bg-hifi-magenta text-base hover:bg-hifi-cta"
               >
                 {addMilestone.isPending && (
                   <Loader2 className="size-4 animate-spin" />
                 )}
-                Tandai {milestoneLabel(nextMilestone)}
+                Tandai {progress.next.label}
               </Button>
             )}
           </>
@@ -170,12 +153,56 @@ export function DeliveryProgressDialog({
   );
 }
 
-function progressWidth(reachedCount: number): number {
-  if (reachedCount <= 0) return 0;
-  const steps = SHIPMENT_MILESTONES.length;
-  // The bar reaches the centre of the last completed milestone, matching the
-  // mockup where two of four steps leave it just past halfway.
-  return Math.min(100, ((reachedCount - 0.5) / steps) * 100);
+/**
+ * Where a shipment stands on the four steps.
+ *
+ * The API rejects a repeated milestone but not an out-of-order one, so a
+ * shipment can carry `DELIVERED` without `IN_TRANSIT`. Progress is therefore the
+ * furthest step reached, not a count — a delivered box has plainly been in
+ * transit, even if nobody recorded the moment, so every earlier step lights up
+ * and the one with no recorded time shows a dash instead of a date.
+ */
+function trackProgress(shipment: Shipment, po: DevicePo | null) {
+  const recorded = new Map(
+    shipment.milestones.map((entry) => [entry.milestone, entry.occurredAt]),
+  );
+
+  const found = TRACKER_STEPS.map((step) => {
+    // Preparing exists as soon as a shipment does; it dates from acceptance,
+    // which is when the Device Partner started packing.
+    if (step.milestones.length === 0) {
+      return { step, recorded: true, occurredAt: po?.acceptedAt };
+    }
+    const hit = step.milestones.find((milestone) => recorded.has(milestone));
+    return {
+      step,
+      recorded: hit !== undefined,
+      occurredAt: hit ? recorded.get(hit) : undefined,
+    };
+  });
+
+  const furthest = found.reduce(
+    (last, entry, index) => (entry.recorded ? index : last),
+    -1,
+  );
+
+  return {
+    furthest,
+    steps: found.map((entry, index) => ({
+      step: entry.step,
+      reached: index <= furthest,
+      occurredAt: entry.occurredAt,
+    })),
+    // Only offer a step beyond the furthest one reached: marking In Transit on a
+    // box already delivered would draw progress that goes backwards.
+    next: TRACKER_STEPS.slice(furthest + 1).find((step) => step.recordAs),
+  };
+}
+
+/** The bar stops at the centre of the furthest step reached. */
+function progressWidth(furthest: number): number {
+  if (furthest < 0) return 0;
+  return Math.min(100, ((furthest + 0.5) / TRACKER_STEPS.length) * 100);
 }
 
 function Field({

@@ -1,5 +1,6 @@
 import { StatusBadge } from "./status-badge";
 import { dateShort } from "@/lib/format";
+import type { PoKind } from "@/lib/status";
 import type { StatusHistoryEntry } from "@/lib/api/types";
 
 /**
@@ -14,8 +15,10 @@ import type { StatusHistoryEntry } from "@/lib/api/types";
  */
 export function PoHistoryPanel({
   entries,
+  kind,
 }: {
   entries: StatusHistoryEntry[];
+  kind: PoKind;
 }) {
   return (
     <div className="rounded-card border border-border-subtle bg-surface-card">
@@ -53,7 +56,7 @@ export function PoHistoryPanel({
                 {dateShort(entry.changedAt)}
               </td>
               <td className="px-5 py-4">
-                <StatusBadge status={entry.newStatus} />
+                <StatusBadge status={entry.newStatus} kind={kind} />
               </td>
               <td
                 className="max-w-[10rem] truncate px-5 py-4 text-text-secondary"

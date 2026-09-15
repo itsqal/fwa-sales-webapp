@@ -17,8 +17,13 @@ export const REFRESH_COOKIE = "fwa_rt";
 /** Refresh this many seconds before the access token actually expires. */
 const REFRESH_SKEW_SECONDS = 60;
 
+/**
+ * `127.0.0.1` rather than `localhost` on purpose. Node resolves `localhost` to
+ * `::1` before `127.0.0.1`, and the API listens on IPv4 only — so the hostname
+ * spelling is the difference between working and `ECONNREFUSED`.
+ */
 export const API_BASE_URL =
-  process.env.API_BASE_URL ?? "http://localhost:8000/v1";
+  process.env.API_BASE_URL ?? "http://127.0.0.1:8000/v1";
 
 export interface RefreshedTokens {
   accessToken: string;

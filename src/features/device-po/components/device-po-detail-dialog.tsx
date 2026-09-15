@@ -139,7 +139,7 @@ export function DevicePoDetailDialog({
                     <div>
                       <p className="text-sm text-text-secondary">Status</p>
                       <div className="mt-1.5">
-                        <StatusBadge status={data.status} />
+                        <StatusBadge status={data.status} kind="device-po" />
                       </div>
                     </div>
 
@@ -329,7 +329,7 @@ export function DevicePoDetailDialog({
               )}
 
               <div className="mt-5">
-                <PoHistoryPanel entries={data?.statusHistory ?? []} />
+                <PoHistoryPanel entries={data?.statusHistory ?? []} kind="device-po" />
               </div>
             </section>
           </div>

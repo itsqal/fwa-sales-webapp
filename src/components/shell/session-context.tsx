@@ -22,6 +22,15 @@ export function SessionProvider({
   );
 }
 
+/**
+ * The profile if there is one, `null` otherwise. For shared components — the
+ * status badge, the filter — that render inside the dashboard but must not
+ * throw if someone ever uses them outside it.
+ */
+export function useOptionalSession(): AdminProfile | null {
+  return useContext(SessionContext);
+}
+
 export function useSession(): AdminProfile {
   const me = useContext(SessionContext);
   if (!me) {

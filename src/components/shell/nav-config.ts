@@ -39,7 +39,7 @@ export const NAV: Record<AdminRole, NavSection[]> = {
           icon: icon("purchase-order"),
         },
         {
-          label: "Purchase Order Device",
+          label: "Monitoring PO Device",
           href: "/dp/device-po",
           icon: icon("purchase-order-device"),
         },
@@ -69,7 +69,7 @@ export const NAV: Record<AdminRole, NavSection[]> = {
       title: "KELOLA",
       items: [
         {
-          label: "Purchase Order",
+          label: "Monitoring Starter Pack",
           href: "/ioh/purchase-order",
           icon: icon("purchase-order"),
         },

@@ -21,10 +21,25 @@ async function serverFetch<T>(path: string): Promise<T | null> {
   const token = store.get(ACCESS_COOKIE)?.value;
   if (!token) return null;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+  } catch (cause) {
+    // The API is unreachable — wrong API_BASE_URL, or the API is down. Left
+    // unhandled this reaches the user as a blank "terjadi kesalahan" page and
+    // reaches the operator as nothing at all, so name it in the log where
+    // `journalctl -u fwa-dashboard` will show it.
+    console.error(
+      `[fwa] cannot reach the API at ${API_BASE_URL}${path} — check API_BASE_URL in .env and that the API is running`,
+      cause,
+    );
+    throw new Error(`Upstream API unreachable at ${API_BASE_URL}`, {
+      cause,
+    });
+  }
 
   if (!res.ok) return null;
   return (await res.json()) as T;

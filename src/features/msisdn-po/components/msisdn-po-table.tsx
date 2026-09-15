@@ -96,7 +96,7 @@ export function MsisdnPoTable({
       {
         id: "status",
         header: "Status",
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} kind="msisdn-po" />,
       },
     );
 

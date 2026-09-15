@@ -11,7 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { statusLabel } from "@/lib/status";
+import { statusLabel, type PoKind } from "@/lib/status";
+import { useOptionalSession } from "@/components/shell/session-context";
 
 /** The topbar magnifier asks the page's search box to take focus. */
 export const FOCUS_SEARCH_EVENT = "fwa:focus-search";
@@ -27,6 +28,8 @@ export interface SearchFilterBarProps {
    * behind it.
    */
   statuses?: readonly string[];
+  /** Which order the statuses belong to — the words differ per side. */
+  statusKind?: PoKind;
   status?: string;
   onStatusChange?: (status: string | undefined) => void;
 }
@@ -36,9 +39,12 @@ export function SearchFilterBar({
   value,
   onChange,
   statuses,
+  statusKind,
   status,
   onStatusChange,
 }: SearchFilterBarProps) {
+  // Filter options use the same role-aware words as the badges they filter.
+  const role = useOptionalSession()?.role;
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(value);
   const [lastValue, setLastValue] = useState(value);
@@ -107,7 +113,7 @@ export function SearchFilterBar({
                 checked={status === value}
                 onCheckedChange={() => onStatusChange(value)}
               >
-                {statusLabel(value)}
+                {statusKind ? statusLabel(value, { kind: statusKind, role }) : statusLabel(value)}
               </DropdownMenuCheckboxItem>
             ))}
           </DropdownMenuContent>
