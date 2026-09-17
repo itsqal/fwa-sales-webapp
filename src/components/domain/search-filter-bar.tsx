@@ -3,15 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Filter, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { statusLabel } from "@/lib/status";
+import { FilterDialog } from "./filter-dialog";
+import type { PoKind } from "@/lib/status";
 
 /** The topbar magnifier asks the page's search box to take focus. */
 export const FOCUS_SEARCH_EVENT = "fwa:focus-search";
@@ -21,12 +14,13 @@ export interface SearchFilterBarProps {
   value: string;
   onChange: (value: string) => void;
   /**
-   * The funnel in the mockups opens a panel that was never drawn (issue #13),
-   * and the list endpoints accept exactly one filter dimension — `status`. So
-   * that is what it offers: anything more would be a control with no query
-   * behind it.
+   * The funnel opens the *Filter* dialog. The list endpoints accept exactly one
+   * filter dimension — a single `status` — so that is all it offers; the Brand
+   * section in the design waits on API support. See `FilterDialog`.
    */
   statuses?: readonly string[];
+  /** Which order the statuses belong to — the words differ per side. */
+  statusKind?: PoKind;
   status?: string;
   onStatusChange?: (status: string | undefined) => void;
 }
@@ -36,9 +30,11 @@ export function SearchFilterBar({
   value,
   onChange,
   statuses,
+  statusKind,
   status,
   onStatusChange,
 }: SearchFilterBarProps) {
+  const [filterOpen, setFilterOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(value);
   const [lastValue, setLastValue] = useState(value);
@@ -75,43 +71,33 @@ export function SearchFilterBar({
         className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-muted"
       />
       {statuses && onStatusChange && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label="Saring status"
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors",
-                  status
-                    ? "bg-hifi-magenta text-white"
-                    : "bg-text-muted text-white hover:bg-text-secondary",
-                )}
-              />
-            }
+        <>
+          {/* The dropdown that used to live here crashed on open: its "Status"
+            * heading was a Base UI Menu.GroupLabel with no Menu.Group around it,
+            * which Base UI refuses to render. The filter is a dialog now. */}
+          <button
+            type="button"
+            aria-label="Saring status"
+            aria-haspopup="dialog"
+            onClick={() => setFilterOpen(true)}
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors",
+              status
+                ? "bg-hifi-magenta text-white"
+                : "bg-text-muted text-white hover:bg-text-secondary",
+            )}
           >
             <Filter className="size-4 fill-current" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel>Status</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              checked={!status}
-              onCheckedChange={() => onStatusChange(undefined)}
-            >
-              Semua status
-            </DropdownMenuCheckboxItem>
-            {statuses.map((value) => (
-              <DropdownMenuCheckboxItem
-                key={value}
-                checked={status === value}
-                onCheckedChange={() => onStatusChange(value)}
-              >
-                {statusLabel(value)}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </button>
+          <FilterDialog
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+            statuses={statuses}
+            statusKind={statusKind}
+            value={status}
+            onApply={onStatusChange}
+          />
+        </>
       )}
     </div>
   );

@@ -54,8 +54,40 @@ const VARIANTS: Record<AnyPoStatus, string> = {
   DIBATALKAN: "bg-status-dibatalkan text-white",
 };
 
-export function statusLabel(status: string): string {
-  return LABELS[status as AnyPoStatus] ?? status;
+/** Which kind of order a status belongs to. Both enums contain `DITERIMA`. */
+export type PoKind = "msisdn-po" | "device-po";
+
+/**
+ * Where one side of a record reads the same state differently, the word changes
+ * here and nowhere else. The status value on the wire never changes.
+ *
+ * The rule is the same on both orders: `DITERIMA` means the counterparty has
+ * received what was asked for, so the party that fulfilled it reads the order as
+ * *Selesai*, while the party that received it keeps *Diterima*.
+ *
+ * It is keyed by order kind as well as role because a Device Partner is the
+ * receiver on an MSISDN PO and the fulfiller on a device PO — the same role
+ * needs different words on its two screens.
+ */
+const CONTEXT_LABELS: Record<
+  PoKind,
+  Partial<Record<string, Partial<Record<AnyPoStatus, string>>>>
+> = {
+  // IOH supplied the numbers; the Device Partner received them.
+  "msisdn-po": { IOH_ADMIN: { DITERIMA: "Selesai" } },
+  // The Device Partner shipped the devices; the MPX received them.
+  "device-po": { DP_ADMIN: { DITERIMA: "Selesai" } },
+};
+
+export function statusLabel(
+  status: string,
+  context?: { kind: PoKind; role?: string },
+): string {
+  const override =
+    context?.role !== undefined
+      ? CONTEXT_LABELS[context.kind][context.role]?.[status as AnyPoStatus]
+      : undefined;
+  return override ?? LABELS[status as AnyPoStatus] ?? status;
 }
 
 export function statusVariant(status: string): string {
@@ -112,29 +144,59 @@ export const devicePo = {
     s === "DIPROSES" || s === "DIKIRIM" || s === "PERIKSA" || s === "DITERIMA",
 };
 
-/** The four steps of the Delivery Progress tracker, in order. */
-export const SHIPMENT_MILESTONES = [
-  "SHIPPED",
-  "IN_TRANSIT",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED",
-] as const;
+/** The milestone values the API records against a shipment. */
+export type ShipmentMilestone =
+  | "SHIPPED"
+  | "IN_TRANSIT"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED";
 
-export type ShipmentMilestone = (typeof SHIPMENT_MILESTONES)[number];
+export type TrackerStepKey = "PREPARING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED";
 
-const MILESTONE_LABELS: Record<ShipmentMilestone, string> = {
-  SHIPPED: "Shipped",
-  IN_TRANSIT: "In Transit",
-  OUT_FOR_DELIVERY: "Out for Delivery",
-  DELIVERED: "Delivered",
-};
-
-export function milestoneLabel(m: string): string {
-  return MILESTONE_LABELS[m as ShipmentMilestone] ?? m;
+export interface TrackerStep {
+  key: TrackerStepKey;
+  label: string;
+  icon: string;
+  /** API milestones that complete this step, earliest first. */
+  milestones: readonly ShipmentMilestone[];
+  /** What a Device Partner records to complete it by hand. Absent: never by hand. */
+  recordAs?: ShipmentMilestone;
 }
 
-/** Icon file in `public/assets/icons/status/`, one per milestone. */
-export function milestoneIcon(m: string): string {
-  const slug = m.toLowerCase().replace(/_/g, "-");
-  return `/assets/icons/status/${slug}.svg`;
-}
+const statusIcon = (name: string) => `/assets/icons/status/${name}.svg`;
+
+/**
+ * The four steps of the Delivery Progress tracker, and how each maps onto the
+ * milestones the API actually stores. The tracker shows steps; the API stores
+ * milestones; this is the one place the two meet.
+ *
+ * * **Preparing** is not a milestone. It is the packing that happens before the
+ *   courier takes the box, so it is complete as soon as a shipment exists.
+ * * **Shipped** is recorded by the API itself when the Device Partner ships, so
+ *   nobody ever marks it by hand.
+ * * **In Transit** also accepts `OUT_FOR_DELIVERY`, which the API still defines
+ *   and older shipments may carry. It is never offered as a step of its own.
+ */
+export const TRACKER_STEPS: readonly TrackerStep[] = [
+  { key: "PREPARING", label: "Preparing", icon: statusIcon("box"), milestones: [] },
+  {
+    key: "SHIPPED",
+    label: "Shipped",
+    icon: statusIcon("truck"),
+    milestones: ["SHIPPED"],
+  },
+  {
+    key: "IN_TRANSIT",
+    label: "In Transit",
+    icon: statusIcon("truck"),
+    milestones: ["IN_TRANSIT", "OUT_FOR_DELIVERY"],
+    recordAs: "IN_TRANSIT",
+  },
+  {
+    key: "DELIVERED",
+    label: "Delivered",
+    icon: statusIcon("check"),
+    milestones: ["DELIVERED"],
+    recordAs: "DELIVERED",
+  },
+];

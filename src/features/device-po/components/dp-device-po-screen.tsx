@@ -54,6 +54,7 @@ export function DpDevicePoScreen() {
           value={list.q}
           onChange={list.setQ}
           statuses={DEVICE_PO_STATUSES}
+          statusKind="device-po"
           status={list.status}
           onStatusChange={list.setStatus}
         />

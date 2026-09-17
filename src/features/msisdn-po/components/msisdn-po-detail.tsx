@@ -180,7 +180,7 @@ export function MsisdnPoDetail({ id }: { id: string }) {
           <div>
             <p className="text-sm text-text-secondary">Status</p>
             <div className="mt-1.5">
-              <StatusBadge status={po.status} />
+              <StatusBadge status={po.status} kind="msisdn-po" />
             </div>
           </div>
 
@@ -213,7 +213,7 @@ export function MsisdnPoDetail({ id }: { id: string }) {
             <h2 className="font-display mb-3 text-xl font-semibold text-text-primary">
               Riwayat
             </h2>
-            <PoHistoryPanel entries={po.statusHistory ?? []} />
+            <PoHistoryPanel entries={po.statusHistory ?? []} kind="msisdn-po" />
           </section>
 
           {gate.hasNumbers(po.status) && (
